@@ -1,36 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Facebook Marketplace Clone (`marketplace-demo`)
 
-## Getting Started
+A full-stack Facebook Marketplace clone built with **Next.js 16 (App Router)**, **React 19**, **TypeScript**, **Tailwind CSS v4**, and **Supabase** (Postgres + Storage).
 
-First, run the development server:
+## Key Features
+
+- **Browse & Search**: Responsive 1–5 column grid and list views, real-time search, and 19 Marketplace categories.
+- **Create Listings**: Multi-step listing type selection (`/create`) and item creation form (`/create/item`) with drag-and-drop photo upload, field validation, price formatting, and live preview.
+- **Listing Detail & Messaging**: Dedicated item pages (`/item/[id]`) with full-screen image lightbox, seller contact actions, and an interactive **Message Seller** form backed by Supabase.
+- **RESTful API & Graceful Fallback**: App Router API endpoints (`/api/listings`, `/api/listings/[id]`, `/api/messages`, `/api/upload`) that persist to Supabase when configured and fall back to mock data for local development.
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Framework | Next.js `16.4.6` (App Router, Turbopack, Cache Components) |
+| UI | React `19.3.0`, TypeScript `5`, Tailwind CSS `4.3.3`, `lucide-react` |
+| Backend / API | Next.js App Router Route Handlers |
+| Database & Storage | Supabase (`@supabase/supabase-js`) — Postgres + `listing-images` Storage bucket |
+
+## Quick Start
 
 ```bash
+# 1. Install dependencies
+npm install
+
+# 2. (Optional) Configure Supabase credentials
+cp .env.example .env.local
+# Edit .env.local with NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+# 3. Start development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> Without `.env.local`, the app runs in mock-data mode automatically so you can explore the full UI immediately.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project Structure
 
-## Learn More
+```text
+src/
+├── app/
+│   ├── api/
+│   │   ├── listings/route.ts        # GET & POST listings
+│   │   ├── listings/[id]/route.ts   # GET single listing
+│   │   ├── messages/route.ts        # GET & POST buyer messages
+│   │   └── upload/route.ts          # POST image upload to Supabase Storage
+│   ├── category/
+│   │   ├── [slug]/page.tsx          # Dynamic category pages
+│   │   └── electronics/page.tsx     # Static Electronics category page
+│   ├── create/
+│   │   ├── page.tsx                 # Listing type selection
+│   │   └── item/page.tsx            # Item creation form + live preview
+│   ├── item/[id]/page.tsx           # Dynamic item detail page
+│   ├── error.tsx                    # Route error boundary
+│   ├── loading.tsx                  # Route loading spinner
+│   ├── not-found.tsx                # 404 page
+│   └── page.tsx                     # Main Marketplace feed ("Today's picks")
+├── components/marketplace/          # Header, Sidebar, ItemGrid, ListingCard, ItemDetailClient, ErrorBoundary
+└── lib/                             # Types, categories, mock data, Supabase client, ListingsProvider
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Documentation
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [SETUP.md](./SETUP.md) — Detailed local and Supabase setup instructions
+- [FEATURES.md](./FEATURES.md) — Complete feature & API documentation
+- [DEVELOPMENT_GUIDE.md](./DEVELOPMENT_GUIDE.md) — Architecture, conventions, and developer workflow
