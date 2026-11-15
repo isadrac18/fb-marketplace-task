@@ -44,10 +44,13 @@ ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 -- Create policies for listings (anyone can read, anyone can insert)
 CREATE POLICY "Anyone can view listings" ON listings FOR SELECT USING (true);
 CREATE POLICY "Anyone can create listings" ON listings FOR INSERT WITH CHECK (true);
-CREATE POLICY "Users can update their own listings" ON listings FOR UPDATE USING (seller_email = current_setting('request.jwt.claims')::json->>'email');
+CREATE POLICY "Users can update their own listings" ON listings FOR UPDATE USING (seller_email = auth.jwt()->>'email');
+CREATE POLICY "Users can delete their own listings" ON listings FOR DELETE USING (seller_email = auth.jwt()->>'email');
 
--- Create policies for messages (anyone can read and insert)
-CREATE POLICY "Anyone can view messages" ON messages FOR SELECT USING (true);
+-- Create policies for messages (restrict SELECT to conversation participants when authenticated; allow buyers to insert)
+CREATE POLICY "Participants can view their messages" ON messages FOR SELECT USING (
+  auth.jwt()->>'email' = buyer_email OR auth.jwt()->>'email' = seller_email
+);
 CREATE POLICY "Anyone can create messages" ON messages FOR INSERT WITH CHECK (true);
 
 -- Create function to update updated_at timestamp

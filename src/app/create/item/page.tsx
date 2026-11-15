@@ -32,7 +32,7 @@ const CONDITIONS: ItemCondition[] = [
 ];
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024; // 4MB (Vercel-safe)
 
 interface FieldErrors {
   title?: string;
@@ -110,7 +110,7 @@ function CreateItemForm() {
     if (file.size > MAX_IMAGE_SIZE_BYTES) {
       setErrors((prev) => ({
         ...prev,
-        image: "Image is too large. Maximum file size is 10 MB.",
+        image: "Image is too large. Maximum file size is 4 MB.",
       }));
       return;
     }
@@ -325,7 +325,7 @@ function CreateItemForm() {
                 {isDragging ? "Drop photo here" : "Add photo"}
               </span>
               <span className="mt-0.5 text-xs text-[#65676B]">
-                Drag &amp; drop or click to upload (PNG, JPG, WebP · max 10MB)
+                Drag &amp; drop or click to upload (PNG, JPG, WebP · max 4MB)
               </span>
               <input
                 type="file"

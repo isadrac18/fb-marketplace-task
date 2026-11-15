@@ -4,6 +4,7 @@ import {
   mapDbMessageToSellerMessage,
   type DbMessageRow,
 } from "@/lib/supabase";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -18,11 +19,20 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const listingId = searchParams.get("listingId")?.trim();
+    const buyerEmail = searchParams.get("buyerEmail")?.trim();
 
     if (!listingId) {
       return NextResponse.json(
         { error: "listingId query parameter is required" },
         { status: 400 }
+      );
+    }
+
+    // Require buyerEmail to scope message reads and prevent public PII scraping
+    if (!buyerEmail || !EMAIL_REGEX.test(buyerEmail)) {
+      return NextResponse.json(
+        { messages: [], source: "restricted" },
+        { headers: NO_STORE_HEADERS }
       );
     }
 
@@ -33,6 +43,7 @@ export async function GET(request: NextRequest) {
         .from("messages")
         .select(MESSAGE_COLUMNS)
         .eq("listing_id", listingId)
+        .eq("buyer_email", buyerEmail)
         .order("created_at", { ascending: false })
         .limit(100);
 
@@ -70,6 +81,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIp(request.headers);
+    const rate = checkRateLimit(`messages:post:${ip}`, 15, 60_000);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: "Too many messages sent. Please wait a moment." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rate.retryAfterSeconds) },
+        }
+      );
+    }
+
     let body: Record<string, unknown>;
     try {
       body = (await request.json()) as Record<string, unknown>;

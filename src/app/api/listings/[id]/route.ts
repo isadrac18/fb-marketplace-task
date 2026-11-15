@@ -58,7 +58,7 @@ export async function GET(
       const mockMatch = MOCK_LISTINGS.find((item) => item.id === trimmedId);
       if (mockMatch) {
         return NextResponse.json(
-          { listing: mockMatch, source: "mock" },
+          { listing: { ...mockMatch, sellerEmail: "" }, source: "mock" },
           { headers: DETAIL_CACHE_HEADERS }
         );
       }
@@ -78,7 +78,7 @@ export async function GET(
     }
 
     return NextResponse.json(
-      { listing: mockListing, source: "mock" },
+      { listing: { ...mockListing, sellerEmail: "" }, source: "mock" },
       { headers: DETAIL_CACHE_HEADERS }
     );
   } catch (err) {

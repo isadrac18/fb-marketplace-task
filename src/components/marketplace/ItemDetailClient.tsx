@@ -552,39 +552,41 @@ export function ItemDetailClient({ id }: { id: string }) {
                           {listing.sellerName}
                         </p>
                         <p className="truncate text-xs text-[#65676B]">
-                          {listing.sellerEmail}
+                          {listing.sellerEmail || "Contact via Message Seller"}
                         </p>
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={handleCopyEmail}
-                        aria-label="Copy seller email"
-                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E4E6EB] bg-[#F0F2F5] px-2.5 text-xs font-semibold text-[#050505] transition-colors hover:bg-[#E4E6EB]"
-                      >
-                        {copiedEmail ? (
-                          <>
-                            <Check className="size-3.5 text-emerald-600" />
-                            <span>Copied</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="size-3.5" />
-                            <span>Copy</span>
-                          </>
-                        )}
-                      </button>
-                      <a
-                        href={`mailto:${listing.sellerEmail}?subject=${encodeURIComponent(
-                          `Marketplace Inquiry: ${listing.title}`
-                        )}`}
-                        aria-label={`Email ${listing.sellerName}`}
-                        className="inline-flex size-8 items-center justify-center rounded-lg border border-[#E4E6EB] bg-[#F0F2F5] text-[#050505] transition-colors hover:bg-[#E4E6EB]"
-                      >
-                        <Mail className="size-3.5" />
-                      </a>
-                    </div>
+                    {listing.sellerEmail && (
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={handleCopyEmail}
+                          aria-label="Copy seller email"
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E4E6EB] bg-[#F0F2F5] px-2.5 text-xs font-semibold text-[#050505] transition-colors hover:bg-[#E4E6EB]"
+                        >
+                          {copiedEmail ? (
+                            <>
+                              <Check className="size-3.5 text-emerald-600" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="size-3.5" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                        <a
+                          href={`mailto:${listing.sellerEmail}?subject=${encodeURIComponent(
+                            `Marketplace Inquiry: ${listing.title}`
+                          )}`}
+                          aria-label={`Email ${listing.sellerName}`}
+                          className="inline-flex size-8 items-center justify-center rounded-lg border border-[#E4E6EB] bg-[#F0F2F5] text-[#050505] transition-colors hover:bg-[#E4E6EB]"
+                        >
+                          <Mail className="size-3.5" />
+                        </a>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

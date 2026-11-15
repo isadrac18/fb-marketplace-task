@@ -41,7 +41,7 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 export function mapDbListingToListing(row: DbListingRow): Listing {
-  const email = row.seller_email || "seller@example.com";
+  const email = row.seller_email || "";
   return {
     id: row.id,
     title: row.title,
@@ -50,8 +50,9 @@ export function mapDbListingToListing(row: DbListingRow): Listing {
     category: row.category,
     location: row.location ?? "Palo Alto, CA",
     imageUrl: row.image_url ?? "",
-    sellerName: email.split("@")[0] || "Seller",
-    sellerEmail: email,
+    sellerName: email.split("@")[0] || "Marketplace Seller",
+    // Redact raw seller email from public API responses to prevent PII scraping
+    sellerEmail: "",
     condition: "Used - Good",
     createdAt: row.created_at,
   };

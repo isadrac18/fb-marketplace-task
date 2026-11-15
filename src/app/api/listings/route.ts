@@ -7,6 +7,7 @@ import {
 import { MOCK_LISTINGS } from "@/lib/mock-data";
 import { getCategoryBySlug } from "@/lib/categories";
 import { makeProductImage } from "@/lib/mock-images";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -85,7 +86,9 @@ export async function GET(request: NextRequest) {
       );
     });
 
-    const sliced = filtered.slice(offset, offset + limit);
+    const sliced = filtered
+      .slice(offset, offset + limit)
+      .map((item) => ({ ...item, sellerEmail: "" }));
 
     return NextResponse.json(
       {
@@ -108,6 +111,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIp(request.headers);
+    const rate = checkRateLimit(`listings:post:${ip}`, 10, 60_000);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please wait before posting again." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rate.retryAfterSeconds) },
+        }
+      );
+    }
+
     let body: Record<string, unknown>;
     try {
       body = (await request.json()) as Record<string, unknown>;
@@ -226,7 +241,7 @@ export async function POST(request: NextRequest) {
       location,
       imageUrl: resolvedImageUrl,
       sellerName: sellerEmail.split("@")[0] || "Seller",
-      sellerEmail,
+      sellerEmail: "",
       condition: "Used - Good" as const,
       createdAt: new Date().toISOString(),
     };
