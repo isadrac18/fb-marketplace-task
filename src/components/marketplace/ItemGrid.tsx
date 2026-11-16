@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, Loader2, Plus, RefreshCw, SearchX } from "lucide-react";
 import { Listing } from "@/lib/types";
+import {
+  getSupabaseClient,
+  mapDbListingToListing,
+  type DbListingRow,
+} from "@/lib/supabase";
 import { ListingCard } from "./ListingCard";
 
 interface ItemGridProps {
@@ -27,6 +32,7 @@ export function ItemGrid({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
 
   const fetchListings = useCallback(
     async (signal?: AbortSignal) => {
@@ -80,6 +86,73 @@ export function ItemGrid({
       controller.abort();
     };
   }, [fetchListings, reloadToken]);
+
+  // Subscribe to Supabase Realtime postgres_changes on listings when configured
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    const matchesFilters = (item: Listing) => {
+      if (categorySlug && item.category !== categorySlug) return false;
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        item.title.toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q) ||
+        item.location.toLowerCase().includes(q)
+      );
+    };
+
+    const channel = supabase
+      .channel(`listings-realtime-${categorySlug ?? "all"}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "listings" },
+        (payload) => {
+          const incoming = mapDbListingToListing(payload.new as DbListingRow);
+          if (!matchesFilters(incoming)) return;
+          setItems((prev) => {
+            if (prev.some((existing) => existing.id === incoming.id)) {
+              return prev;
+            }
+            const next = [incoming, ...prev];
+            onResultCountChange?.(next.length);
+            return next;
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "listings" },
+        (payload) => {
+          const updated = mapDbListingToListing(payload.new as DbListingRow);
+          setItems((prev) =>
+            prev.map((item) => (item.id === updated.id ? updated : item))
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "listings" },
+        (payload) => {
+          const deletedId = (payload.old as { id?: string })?.id;
+          if (!deletedId) return;
+          setItems((prev) => {
+            const next = prev.filter((item) => item.id !== deletedId);
+            onResultCountChange?.(next.length);
+            return next;
+          });
+        }
+      )
+      .subscribe((status) => {
+        setIsRealtimeConnected(status === "SUBSCRIBED");
+      });
+
+    return () => {
+      setIsRealtimeConnected(false);
+      supabase.removeChannel(channel);
+    };
+  }, [categorySlug, searchQuery, onResultCountChange]);
 
   if (isLoading) {
     return (
@@ -169,19 +242,35 @@ export function ItemGrid({
 
   if (viewMode === "list") {
     return (
-      <div className="flex flex-col gap-3">
-        {items.map((listing) => (
-          <ListingCard key={listing.id} listing={listing} viewMode="list" />
-        ))}
+      <div className="space-y-3">
+        {isRealtimeConnected && (
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+            <span className="size-2 animate-pulse rounded-full bg-emerald-500" />
+            <span>Live updates active</span>
+          </div>
+        )}
+        <div className="flex flex-col gap-3">
+          {items.map((listing) => (
+            <ListingCard key={listing.id} listing={listing} viewMode="list" />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-x-3 gap-y-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-      {items.map((listing) => (
-        <ListingCard key={listing.id} listing={listing} viewMode="grid" />
-      ))}
+    <div className="space-y-3">
+      {isRealtimeConnected && (
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+          <span className="size-2 animate-pulse rounded-full bg-emerald-500" />
+          <span>Live updates active</span>
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-x-3 gap-y-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        {items.map((listing) => (
+          <ListingCard key={listing.id} listing={listing} viewMode="grid" />
+        ))}
+      </div>
     </div>
   );
 }

@@ -64,4 +64,7 @@ $$ language 'plpgsql';
 
 -- Create trigger to automatically update updated_at
 CREATE TRIGGER update_listings_updated_at BEFORE UPDATE ON listings
-FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); 
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Enable Supabase Realtime for live listings updates
+ALTER PUBLICATION supabase_realtime ADD TABLE listings;
