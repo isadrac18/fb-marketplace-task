@@ -40,7 +40,6 @@ export function MarketplaceSidebar({ activeSlug }: MarketplaceSidebarProps) {
             <span className="font-semibold">Browse all</span>
           </Link>
 
-
           <Link
             href="/create"
             className="mt-2 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-[#E7F3FF] px-3 text-[15px] font-semibold text-[#1877F2] transition-colors hover:bg-[#DBE7F2]"
@@ -49,7 +48,6 @@ export function MarketplaceSidebar({ activeSlug }: MarketplaceSidebarProps) {
             <span>Create new listing</span>
           </Link>
 
-
           <Link
             href="/seller/connect"
             className="mt-1.5 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-[#635BFF]/30 bg-[#635BFF]/10 px-3 text-[14px] font-semibold text-[#635BFF] transition-colors hover:bg-[#635BFF]/15"
@@ -57,8 +55,6 @@ export function MarketplaceSidebar({ activeSlug }: MarketplaceSidebarProps) {
             <CreditCard className="size-4" />
             <span>Connect with Stripe</span>
           </Link>
-
-
         </div>
 
         <div className="my-3 border-t border-[#E4E6EB]" />
@@ -93,7 +89,7 @@ export function MarketplaceSidebar({ activeSlug }: MarketplaceSidebarProps) {
                     <CategoryIcon name={category.iconName} className="size-4" />
                   </span>
                   <span className="truncate">{category.name}</span>
-      
+                </Link>
               );
             })}
           </nav>
@@ -132,7 +128,7 @@ export function MobileCategoryStrip({ activeSlug }: MarketplaceSidebarProps) {
           >
             <CategoryIcon name={category.iconName} className="size-3.5" />
             <span>{category.name}</span>
-
+          </Link>
         );
       })}
     </div>
