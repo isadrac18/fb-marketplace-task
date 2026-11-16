@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   calculatePlatformFeeCents,
+  getAppOrigin,
   getStripeClient,
 } from "@/lib/stripe";
 import {
   getSupabaseAdminClient,
   type DbListingRow,
+  type DbSellerRow,
 } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
@@ -85,7 +87,32 @@ export async function POST(request: NextRequest) {
     }
 
     const sellerEmail = listing.seller_email.trim().toLowerCase();
+    const { data: seller, error: sellerError } = await supabase
+      .from("sellers")
+      .select("*")
+      .eq("email", sellerEmail)
+      .maybeSingle<DbSellerRow>();
+
+    if (sellerError) {
+      return NextResponse.json(
+        { error: "Failed to verify seller payout account", details: sellerError.message },
+        { status: 500 }
+      );
+    }
+
+    if (
+      !seller ||
+      !seller.stripe_account_id ||
+      (!seller.onboarding_complete && !seller.charges_enabled)
+    ) {
+      return NextResponse.json(
+        { error: "This seller has not completed Stripe onboarding yet." },
+        { status: 400 }
+      );
+    }
+
     const platformFeeCents = calculatePlatformFeeCents(amountCents);
+    const origin = getAppOrigin(request);
 
     // Only pass HTTP(S) image URLs to Stripe (skip data: URLs)
     const productImages =
@@ -93,35 +120,48 @@ export async function POST(request: NextRequest) {
         ? [listing.image_url]
         : undefined;
 
-    const session = await stripe.checkout.sessions.create({
-      ui_mode: "embedded",
-      redirect_on_completion: "never",
-      mode: "payment",
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: listing.title,
-              description: listing.description
-                ? listing.description.slice(0, 500)
-                : undefined,
-              images: productImages,
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: listing.title,
+                description: listing.description
+                  ? listing.description.slice(0, 500)
+                  : undefined,
+                images: productImages,
+              },
+              unit_amount: amountCents,
             },
-            unit_amount: amountCents,
+            quantity: 1,
           },
-          quantity: 1,
+        ],
+        payment_intent_data: {
+          application_fee_amount: platformFeeCents,
+          metadata: {
+            listing_id: listing.id,
+            seller_email: sellerEmail,
+            platform_fee_cents: String(platformFeeCents),
+          },
         },
-      ],
-      metadata: {
-        listing_id: listing.id,
-        seller_email: sellerEmail,
-        platform_fee_cents: String(platformFeeCents),
+        metadata: {
+          listing_id: listing.id,
+          seller_email: sellerEmail,
+          platform_fee_cents: String(platformFeeCents),
+        },
+        success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}&listing_id=${encodeURIComponent(listing.id)}&account_id=${encodeURIComponent(seller.stripe_account_id)}`,
+        cancel_url: `${origin}/item/${encodeURIComponent(listing.id)}?canceled=true`,
       },
-    });
+      {
+        stripeAccount: seller.stripe_account_id,
+      }
+    );
 
     return NextResponse.json({
-      clientSecret: session.client_secret,
+      url: session.url,
       sessionId: session.id,
     });
   } catch (err) {

@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
       customerEmail: string | null;
       listingId: string | null;
       sellerEmail: string | null;
+      platformFeeCents: number | null;
       paymentIntentId: string | null;
     } | null = null;
 
@@ -63,6 +64,9 @@ export async function GET(request: NextRequest) {
           sessionId,
           resolvedAccountId ? { stripeAccount: resolvedAccountId } : undefined
         );
+        const parsedFee = session.metadata?.platform_fee_cents
+          ? Number(session.metadata.platform_fee_cents)
+          : null;
         stripeSessionData = {
           id: session.id,
           paymentStatus: session.payment_status,
@@ -72,6 +76,8 @@ export async function GET(request: NextRequest) {
             session.customer_details?.email || session.customer_email || null,
           listingId: session.metadata?.listing_id || listingId || null,
           sellerEmail: session.metadata?.seller_email || null,
+          platformFeeCents:
+            parsedFee !== null && Number.isFinite(parsedFee) ? parsedFee : null,
           paymentIntentId:
             typeof session.payment_intent === "string"
               ? session.payment_intent
@@ -127,7 +133,6 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Sync paid checkout to DB immediately (also handled idempotently by webhook)
       if (
         stripeSessionData &&
         (stripeSessionData.paymentStatus === "paid" ||
@@ -155,10 +160,12 @@ export async function GET(request: NextRequest) {
         await supabase.from("orders").upsert(
           {
             listing_id: effectiveListingId,
-            seller_email: listingSellerEmail.trim().toLowerCase() || "platform",
+            seller_email: listingSellerEmail.trim().toLowerCase() || "unknown",
             buyer_email: stripeSessionData.customerEmail,
             amount_cents: amountCents,
-            platform_fee_cents: calculatePlatformFeeCents(amountCents),
+            platform_fee_cents:
+              stripeSessionData.platformFeeCents ??
+              calculatePlatformFeeCents(amountCents),
             stripe_session_id: sessionId,
             stripe_payment_intent_id: stripeSessionData.paymentIntentId,
             stripe_account_id: resolvedAccountId || null,
