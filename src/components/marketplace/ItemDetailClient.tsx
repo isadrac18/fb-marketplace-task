@@ -10,7 +10,9 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  CreditCard,
   Expand,
+  ShoppingBag,
   Loader2,
   Mail,
   MapPin,
@@ -56,6 +58,42 @@ export function ItemDetailClient({ id }: { id: string }) {
   const [sentSuccess, setSentSuccess] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [isImageOpen, setIsImageOpen] = useState(false);
+  const [isBuying, setIsBuying] = useState(false);
+  const [buyError, setBuyError] = useState<string | null>(null);
+  const [checkoutCanceled, setCheckoutCanceled] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("canceled") === "true") {
+        setCheckoutCanceled(true);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    async function refreshListing() {
+      try {
+        const res = await fetch(`/api/listings/${encodeURIComponent(id)}`);
+        if (res.ok) {
+          const data = (await res.json()) as {
+            listing?: import("@/lib/types").Listing;
+          };
+          if (active && data.listing) {
+            upsertListing(data.listing);
+          }
+        }
+      } catch {
+        // Ignore background refresh error if cached listing exists
+      }
+    }
+    refreshListing();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, reloadToken]);
 
   useEffect(() => {
     let active = true;
@@ -238,6 +276,36 @@ export function ItemDetailClient({ id }: { id: string }) {
     }
   };
 
+  const handleBuyNow = async () => {
+    if (!listing) return;
+    setBuyError(null);
+    setCheckoutCanceled(false);
+    setIsBuying(true);
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listingId: listing.id }),
+      });
+
+      const data = (await res.json()) as {
+        url?: string;
+        error?: string;
+      };
+
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Unable to start Stripe Checkout.");
+      }
+
+      window.location.href = data.url;
+    } catch (err) {
+      setBuyError(
+        err instanceof Error ? err.message : "Unable to start Stripe Checkout."
+      );
+      setIsBuying(false);
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!EMAIL_REGEX.test(buyerEmail.trim())) {
@@ -359,6 +427,76 @@ export function ItemDetailClient({ id }: { id: string }) {
                     <Clock className="size-3.5 shrink-0" />
                     <span>Listed {listedDate}</span>
                   </span>
+                </div>
+
+                {/* Buy Now / Sold Status */}
+                <div className="mt-5 space-y-2.5">
+                  {checkoutCanceled && (
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900">
+                      <span>Checkout was canceled. No charge was made.</span>
+                      <button
+                        type="button"
+                        onClick={() => setCheckoutCanceled(false)}
+                        aria-label="Dismiss canceled notice"
+                        className="rounded p-0.5 text-amber-700 hover:bg-amber-100"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {buyError && (
+                    <div
+                      role="alert"
+                      className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700"
+                    >
+                      <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                      <span>{buyError}</span>
+                    </div>
+                  )}
+
+                  {listing.status === "sold" ? (
+                    <div className="flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                      <ShoppingBag className="size-4" />
+                      <span>Sold · This item is no longer available</span>
+                    </div>
+                  ) : listing.sellerOnboarded && listing.price > 0 ? (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={handleBuyNow}
+                        disabled={isBuying}
+                        className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#635BFF] px-4 text-[15px] font-semibold text-white shadow-xs transition-colors hover:bg-[#5249F5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#635BFF] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isBuying ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" />
+                            <span>Redirecting to Stripe Checkout...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CreditCard className="size-5" />
+                            <span>Buy Now · {formatPrice(listing.price)}</span>
+                          </>
+                        )}
+                      </button>
+                      <p className="mt-1.5 text-center text-xs text-[#65676B]">
+                        Instant checkout via Stripe Connect (10% platform fee
+                        included)
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-[#E4E6EB] bg-[#F7F8FA] px-3.5 py-2.5 text-xs text-[#65676B]">
+                      Online checkout is unavailable because this seller
+                      hasn&apos;t connected Stripe yet.{" "}
+                      <Link
+                        href="/seller/connect"
+                        className="font-semibold text-[#635BFF] hover:underline"
+                      >
+                        Are you the seller? Connect with Stripe
+                      </Link>
+                    </div>
+                  )}
                 </div>
 
                 {/* Message Seller CTA & Form */}

@@ -10,6 +10,8 @@ export interface DbListingRow {
   seller_email: string;
   image_url: string | null;
   location: string | null;
+  status?: string | null;
+  sold_at?: string | null;
   created_at: string;
   updated_at?: string;
 }
@@ -21,6 +23,17 @@ export interface DbMessageRow {
   seller_email: string;
   message: string;
   created_at: string;
+}
+
+export interface DbSellerRow {
+  id: string;
+  email: string;
+  stripe_account_id: string;
+  onboarding_complete: boolean;
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  created_at: string;
+  updated_at?: string;
 }
 
 export function isSupabaseConfigured(): boolean {
@@ -40,7 +53,56 @@ export function getSupabaseClient(): SupabaseClient | null {
   );
 }
 
-export function mapDbListingToListing(row: DbListingRow): Listing {
+export function getSupabaseAdminClient(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+
+  if (url && serviceRoleKey && url.startsWith("http")) {
+    return createClient(url, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+
+  return getSupabaseClient();
+}
+
+export async function getOnboardedSellerEmails(
+  supabase: SupabaseClient,
+  emails: string[]
+): Promise<Set<string>> {
+  const normalized = Array.from(
+    new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))
+  );
+  if (normalized.length === 0) {
+    return new Set();
+  }
+
+  const { data, error } = await supabase
+    .from("sellers")
+    .select("email, onboarding_complete, charges_enabled")
+    .in("email", normalized);
+
+  if (error || !data) {
+    return new Set();
+  }
+
+  const onboarded = new Set<string>();
+  for (const row of data as Array<{
+    email: string;
+    onboarding_complete?: boolean;
+    charges_enabled?: boolean;
+  }>) {
+    if (row.onboarding_complete || row.charges_enabled) {
+      onboarded.add(row.email.trim().toLowerCase());
+    }
+  }
+  return onboarded;
+}
+
+export function mapDbListingToListing(
+  row: DbListingRow,
+  options?: { sellerOnboarded?: boolean }
+): Listing {
   const email = row.seller_email || "";
   return {
     id: row.id,
@@ -54,6 +116,8 @@ export function mapDbListingToListing(row: DbListingRow): Listing {
     // Redact raw seller email from public API responses to prevent PII scraping
     sellerEmail: "",
     condition: "Used - Good",
+    status: row.status === "sold" ? "sold" : "available",
+    sellerOnboarded: options?.sellerOnboarded ?? false,
     createdAt: row.created_at,
   };
 }

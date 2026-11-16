@@ -35,6 +35,13 @@ export function ListingCard({ listing, viewMode = "grid" }: ListingCardProps) {
             sizes="(max-width: 640px) 100vw, 128px"
             className="object-cover transition-transform duration-300 group-hover:scale-105"
           />
+
+          {listing.status === "sold" && (
+            <span className="absolute top-2 left-2 rounded-md bg-red-600 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white shadow-xs">
+              Sold
+            </span>
+          )}
+
         </div>
         <div className="flex min-w-0 flex-1 flex-col justify-between gap-1.5">
           <div>
@@ -80,6 +87,15 @@ export function ListingCard({ listing, viewMode = "grid" }: ListingCardProps) {
           className="object-cover transition-transform duration-300 group-hover:scale-[1.04]"
         />
         <div className="pointer-events-none absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/[0.03]" />
+        {listing.status === "sold" ? (
+          <span className="absolute top-2 left-2 rounded-md bg-red-600 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-white shadow-xs">
+            Sold
+          </span>
+        ) : listing.sellerOnboarded && listing.price > 0 ? (
+          <span className="absolute bottom-2 left-2 rounded-md bg-[#635BFF]/90 px-2 py-0.5 text-[11px] font-semibold text-white shadow-xs backdrop-blur-xs">
+            Buy Now
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-2 px-0.5">

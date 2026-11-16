@@ -8,6 +8,8 @@ CREATE TABLE listings (
   seller_email VARCHAR(255) NOT NULL,
   image_url TEXT,
   location VARCHAR(255) DEFAULT 'Palo Alto, CA',
+  status VARCHAR(20) NOT NULL DEFAULT 'available',
+  sold_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -68,3 +70,91 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Enable Supabase Realtime for live listings updates
 ALTER PUBLICATION supabase_realtime ADD TABLE listings;
+
+
+-- ============================================================================
+-- Stripe Connect Migration (safe to run on existing databases)
+-- ============================================================================
+
+-- Add sold status columns to listings if upgrading an existing table
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'available';
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS sold_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);
+
+-- Create sellers table for Stripe Connect accounts (no login required, keyed by email)
+CREATE TABLE IF NOT EXISTS sellers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) NOT NULL UNIQUE,
+  stripe_account_id VARCHAR(255) NOT NULL UNIQUE,
+  onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE,
+  charges_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  payouts_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sellers_email ON sellers(email);
+CREATE INDEX IF NOT EXISTS idx_sellers_stripe_account_id ON sellers(stripe_account_id);
+
+-- Create orders table for completed Stripe Checkout purchases
+CREATE TABLE IF NOT EXISTS orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  listing_id UUID REFERENCES listings(id) ON DELETE SET NULL,
+  seller_email VARCHAR(255) NOT NULL,
+  buyer_email VARCHAR(255),
+  amount_cents INTEGER NOT NULL,
+  platform_fee_cents INTEGER NOT NULL DEFAULT 0,
+  stripe_session_id VARCHAR(255) NOT NULL UNIQUE,
+  stripe_payment_intent_id VARCHAR(255),
+  stripe_account_id VARCHAR(255),
+  status VARCHAR(50) NOT NULL DEFAULT 'paid',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_listing_id ON orders(listing_id);
+CREATE INDEX IF NOT EXISTS idx_orders_stripe_session_id ON orders(stripe_session_id);
+
+-- Enable RLS on sellers and orders
+ALTER TABLE sellers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+
+-- Policies for sellers (public read of onboarding status, server/anon write for demo without login)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sellers' AND policyname = 'Anyone can view sellers') THEN
+    CREATE POLICY "Anyone can view sellers" ON sellers FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sellers' AND policyname = 'Anyone can insert sellers') THEN
+    CREATE POLICY "Anyone can insert sellers" ON sellers FOR INSERT WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sellers' AND policyname = 'Anyone can update sellers') THEN
+    CREATE POLICY "Anyone can update sellers" ON sellers FOR UPDATE USING (true);
+  END IF;
+END $$;
+
+-- Policies for orders
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'orders' AND policyname = 'Anyone can view orders') THEN
+    CREATE POLICY "Anyone can view orders" ON orders FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'orders' AND policyname = 'Anyone can insert orders') THEN
+    CREATE POLICY "Anyone can insert orders" ON orders FOR INSERT WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'orders' AND policyname = 'Anyone can update orders') THEN
+    CREATE POLICY "Anyone can update orders" ON orders FOR UPDATE USING (true);
+  END IF;
+END $$;
+
+-- Allow server/webhook to mark listings as sold even when using anon key
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'listings' AND policyname = 'Anyone can mark listings sold') THEN
+    CREATE POLICY "Anyone can mark listings sold" ON listings FOR UPDATE USING (true);
+  END IF;
+END $$;
+
+-- Trigger for sellers.updated_at
+DROP TRIGGER IF EXISTS update_sellers_updated_at ON sellers;
+CREATE TRIGGER update_sellers_updated_at BEFORE UPDATE ON sellers
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

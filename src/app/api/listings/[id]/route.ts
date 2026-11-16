@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  getOnboardedSellerEmails,
   getSupabaseClient,
   mapDbListingToListing,
   type DbListingRow,
@@ -7,10 +8,10 @@ import {
 import { MOCK_LISTINGS } from "@/lib/mock-data";
 
 const LISTING_COLUMNS =
-  "id, title, description, price, category, seller_email, image_url, location, created_at";
+  "id, title, description, price, category, seller_email, image_url, location, status, sold_at, created_at";
 
 const DETAIL_CACHE_HEADERS = {
-  "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
+  "Cache-Control": "private, no-cache, no-store, must-revalidate",
 };
 
 export async function GET(
@@ -45,9 +46,17 @@ export async function GET(
       }
 
       if (data) {
+        const row = data as DbListingRow;
+        const onboardedEmails = await getOnboardedSellerEmails(supabase, [
+          row.seller_email,
+        ]);
+        const sellerOnboarded = onboardedEmails.has(
+          (row.seller_email || "").trim().toLowerCase()
+        );
+
         return NextResponse.json(
           {
-            listing: mapDbListingToListing(data as DbListingRow),
+            listing: mapDbListingToListing(row, { sellerOnboarded }),
             source: "supabase",
           },
           { headers: DETAIL_CACHE_HEADERS }

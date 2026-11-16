@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  getOnboardedSellerEmails,
   getSupabaseClient,
   mapDbListingToListing,
   type DbListingRow,
@@ -12,10 +13,10 @@ import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const LISTING_COLUMNS =
-  "id, title, description, price, category, seller_email, image_url, location, created_at";
+  "id, title, description, price, category, seller_email, image_url, location, status, sold_at, created_at";
 
 const LISTINGS_CACHE_HEADERS = {
-  "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+  "Cache-Control": "private, no-cache, no-store, must-revalidate",
 };
 
 export async function GET(request: NextRequest) {
@@ -60,8 +61,17 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const listings = ((data ?? []) as DbListingRow[]).map(
-        mapDbListingToListing
+      const rows = (data ?? []) as DbListingRow[];
+      const onboardedEmails = await getOnboardedSellerEmails(
+        supabase,
+        rows.map((r) => r.seller_email)
+      );
+      const listings = rows.map((row) =>
+        mapDbListingToListing(row, {
+          sellerOnboarded: onboardedEmails.has(
+            (row.seller_email || "").trim().toLowerCase()
+          ),
+        })
       );
 
       return NextResponse.json(
@@ -222,9 +232,18 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const createdRow = data as DbListingRow;
+      const onboardedEmails = await getOnboardedSellerEmails(supabase, [
+        createdRow.seller_email,
+      ]);
+
       return NextResponse.json(
         {
-          listing: mapDbListingToListing(data as DbListingRow),
+          listing: mapDbListingToListing(createdRow, {
+            sellerOnboarded: onboardedEmails.has(
+              (createdRow.seller_email || "").trim().toLowerCase()
+            ),
+          }),
           source: "supabase",
         },
         { status: 201 }
@@ -243,6 +262,8 @@ export async function POST(request: NextRequest) {
       sellerName: sellerEmail.split("@")[0] || "Seller",
       sellerEmail: "",
       condition: "Used - Good" as const,
+      status: "available" as const,
+      sellerOnboarded: false,
       createdAt: new Date().toISOString(),
     };
 

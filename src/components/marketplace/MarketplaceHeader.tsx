@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Plus, Search, Store, X } from "lucide-react";
+import { CreditCard, Plus, Search, Store, X } from "lucide-react";
 import { useListings } from "@/lib/listings-store";
 
 export function MarketplaceHeader() {
@@ -51,7 +51,15 @@ export function MarketplaceHeader() {
         </div>
 
         {/* Right: Actions */}
+        {/* Right: Actions */}
         <div className="flex shrink-0 items-center gap-2">
+          <Link
+            href="/seller/connect"
+            className="hidden items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#635BFF] transition-colors hover:bg-[#635BFF]/10 md:inline-flex"
+          >
+            <CreditCard className="size-4" />
+            <span>Connect with Stripe</span>
+          </Link>
           <Link
             href="/"
             className="hidden items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#050505] transition-colors hover:bg-[#F0F2F5] sm:inline-flex"
