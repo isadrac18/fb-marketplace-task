@@ -101,10 +101,14 @@ export function SellerConnectClient() {
       const data = (await res.json()) as {
         url?: string;
         error?: string;
+        details?: string;
       };
 
       if (!res.ok || !data.url) {
-        throw new Error(data.error || "Unable to start Stripe onboarding.");
+        const message = data.details
+          ? `${data.error || "Unable to start Stripe onboarding"}: ${data.details}`
+          : data.error || "Unable to start Stripe onboarding.";
+        throw new Error(message);
       }
 
       window.location.href = data.url;
