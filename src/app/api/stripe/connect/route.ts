@@ -1,6 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAppOrigin, getStripeClient } from "@/lib/stripe";
+import {
+  getAppOrigin,
+  getStripeClient,
+  stripeV2Request,
+} from "@/lib/stripe";
 import { getSupabaseAdminClient, type DbSellerRow } from "@/lib/supabase";
+
+interface StripeV2Account {
+  id: string;
+  configuration?: {
+    merchant?: {
+      capabilities?: {
+        card_payments?: { status?: string };
+      };
+    };
+    recipient?: {
+      capabilities?: {
+        stripe_balance?: {
+          stripe_transfers?: { status?: string };
+        };
+      };
+    };
+  };
+  requirements?: {
+    summary?: {
+      minimum_deadline?: {
+        status?: string;
+      };
+    };
+  };
+}
+
+interface StripeV2AccountLink {
+  url: string;
+}
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -55,12 +88,37 @@ export async function GET(request: NextRequest) {
     const stripe = getStripeClient();
     if (stripe && seller.stripe_account_id) {
       try {
-        const account = await stripe.accounts.retrieve(seller.stripe_account_id);
-        const chargesEnabled = Boolean(account.charges_enabled);
-        const payoutsEnabled = Boolean(account.payouts_enabled);
-        const onboardingComplete = Boolean(
-          account.details_submitted && account.charges_enabled
-        );
+        let chargesEnabled = false;
+        let payoutsEnabled = false;
+        let detailsSubmitted = false;
+
+        try {
+          const v2Account = await stripeV2Request<StripeV2Account>(
+            `/v2/core/accounts/${encodeURIComponent(seller.stripe_account_id)}?include[0]=configuration.merchant&include[1]=configuration.recipient&include[2]=requirements`
+          );
+          chargesEnabled =
+            v2Account.configuration?.merchant?.capabilities?.card_payments
+              ?.status === "active";
+          payoutsEnabled =
+            v2Account.configuration?.recipient?.capabilities?.stripe_balance
+              ?.stripe_transfers?.status === "active";
+          const deadlineStatus =
+            v2Account.requirements?.summary?.minimum_deadline?.status;
+          detailsSubmitted =
+            chargesEnabled ||
+            (Boolean(deadlineStatus) &&
+              deadlineStatus !== "currently_due" &&
+              deadlineStatus !== "past_due");
+        } catch {
+          const account = await stripe.accounts.retrieve(
+            seller.stripe_account_id
+          );
+          chargesEnabled = Boolean(account.charges_enabled);
+          payoutsEnabled = Boolean(account.payouts_enabled);
+          detailsSubmitted = Boolean(account.details_submitted);
+        }
+
+        const onboardingComplete = Boolean(chargesEnabled);
 
         if (
           chargesEnabled !== seller.charges_enabled ||
@@ -86,7 +144,7 @@ export async function GET(request: NextRequest) {
               onboardingComplete,
               chargesEnabled,
               payoutsEnabled,
-              detailsSubmitted: Boolean(account.details_submitted),
+              detailsSubmitted,
             },
           },
           { headers: NO_STORE_HEADERS }
@@ -176,17 +234,41 @@ export async function POST(request: NextRequest) {
     let stripeAccountId = existingSeller?.stripe_account_id || "";
 
     if (!stripeAccountId) {
-      const account = await stripe.accounts.create({
-        type: "express",
-        email,
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
-        },
-        metadata: {
-          seller_email: email,
-        },
-      });
+      const account = await stripeV2Request<StripeV2Account>(
+        "/v2/core/accounts",
+        {
+          method: "POST",
+          body: {
+            contact_email: email,
+            display_name: email.split("@")[0],
+            identity: { country: "US" },
+            dashboard: "full",
+            defaults: {
+              responsibilities: {
+                fees_collector: "stripe",
+                losses_collector: "stripe",
+              },
+            },
+            configuration: {
+              merchant: {
+                capabilities: {
+                  card_payments: { requested: true },
+                },
+              },
+              recipient: {
+                capabilities: {
+                  stripe_balance: {
+                    stripe_transfers: { requested: true },
+                  },
+                },
+              },
+            },
+            metadata: {
+              seller_email: email,
+            },
+          },
+        }
+      );
 
       stripeAccountId = account.id;
 
@@ -195,8 +277,8 @@ export async function POST(request: NextRequest) {
           email,
           stripe_account_id: stripeAccountId,
           onboarding_complete: false,
-          charges_enabled: Boolean(account.charges_enabled),
-          payouts_enabled: Boolean(account.payouts_enabled),
+          charges_enabled: false,
+          payouts_enabled: false,
         },
         { onConflict: "email" }
       );
@@ -211,13 +293,25 @@ export async function POST(request: NextRequest) {
 
     const origin = getAppOrigin(request);
     const encodedEmail = encodeURIComponent(email);
+    const refreshUrl = `${origin}/seller/connect?refresh=true&email=${encodedEmail}`;
+    const returnUrl = `${origin}/seller/connect?success=true&account_id=${encodeURIComponent(stripeAccountId)}&email=${encodedEmail}`;
 
-    const accountLink = await stripe.accountLinks.create({
-      account: stripeAccountId,
-      refresh_url: `${origin}/seller/connect?refresh=true&email=${encodedEmail}`,
-      return_url: `${origin}/seller/connect?success=true&account_id=${encodeURIComponent(stripeAccountId)}&email=${encodedEmail}`,
-      type: "account_onboarding",
-    });
+    const accountLink = await stripeV2Request<StripeV2AccountLink>(
+      "/v2/core/account_links",
+      {
+        method: "POST",
+        body: {
+          account: stripeAccountId,
+          use_case: {
+            type: "account_onboarding",
+            account_onboarding: {
+              return_url: returnUrl,
+              refresh_url: refreshUrl,
+            },
+          },
+        },
+      }
+    );
 
     return NextResponse.json({
       url: accountLink.url,
