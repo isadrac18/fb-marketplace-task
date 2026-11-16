@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStripeClient } from "@/lib/stripe";
+import { calculatePlatformFeeCents, getStripeClient } from "@/lib/stripe";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 const NO_STORE_HEADERS = {
@@ -53,6 +53,8 @@ export async function GET(request: NextRequest) {
       currency: string | null;
       customerEmail: string | null;
       listingId: string | null;
+      sellerEmail: string | null;
+      paymentIntentId: string | null;
     } | null = null;
 
     if (stripe) {
@@ -69,6 +71,11 @@ export async function GET(request: NextRequest) {
           customerEmail:
             session.customer_details?.email || session.customer_email || null,
           listingId: session.metadata?.listing_id || listingId || null,
+          sellerEmail: session.metadata?.seller_email || null,
+          paymentIntentId:
+            typeof session.payment_intent === "string"
+              ? session.payment_intent
+              : session.payment_intent?.id ?? null,
         };
       } catch {
         // Fallback to DB order lookup if Stripe retrieve fails
@@ -87,10 +94,12 @@ export async function GET(request: NextRequest) {
     let orderRecorded = false;
 
     if (supabase) {
+      let listingSellerEmail = stripeSessionData?.sellerEmail || "";
+
       if (effectiveListingId) {
         const { data: listing } = await supabase
           .from("listings")
-          .select("id, title, price, image_url, status")
+          .select("id, title, price, image_url, status, seller_email")
           .eq("id", effectiveListingId)
           .maybeSingle<{
             id: string;
@@ -98,9 +107,13 @@ export async function GET(request: NextRequest) {
             price: number | string;
             image_url: string | null;
             status: string | null;
+            seller_email: string | null;
           }>();
 
         if (listing) {
+          if (!listingSellerEmail && listing.seller_email) {
+            listingSellerEmail = listing.seller_email;
+          }
           listingSummary = {
             id: listing.id,
             title: listing.title,
@@ -112,6 +125,47 @@ export async function GET(request: NextRequest) {
             status: listing.status || "available",
           };
         }
+      }
+
+      // Sync paid checkout to DB immediately (also handled idempotently by webhook)
+      if (
+        stripeSessionData &&
+        (stripeSessionData.paymentStatus === "paid" ||
+          stripeSessionData.paymentStatus === "no_payment_required") &&
+        effectiveListingId
+      ) {
+        if (listingSummary && listingSummary.status !== "sold") {
+          const { error: soldErr } = await supabase
+            .from("listings")
+            .update({
+              status: "sold",
+              sold_at: new Date().toISOString(),
+            })
+            .eq("id", effectiveListingId);
+
+          if (!soldErr) {
+            listingSummary.status = "sold";
+          }
+        }
+
+        const amountCents =
+          stripeSessionData.amountTotal ??
+          (listingSummary ? Math.round(listingSummary.price * 100) : 0);
+
+        await supabase.from("orders").upsert(
+          {
+            listing_id: effectiveListingId,
+            seller_email: listingSellerEmail.trim().toLowerCase() || "platform",
+            buyer_email: stripeSessionData.customerEmail,
+            amount_cents: amountCents,
+            platform_fee_cents: calculatePlatformFeeCents(amountCents),
+            stripe_session_id: sessionId,
+            stripe_payment_intent_id: stripeSessionData.paymentIntentId,
+            stripe_account_id: resolvedAccountId || null,
+            status: "paid",
+          },
+          { onConflict: "stripe_session_id" }
+        );
       }
 
       const { data: order } = await supabase

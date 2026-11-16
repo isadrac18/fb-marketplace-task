@@ -27,6 +27,7 @@ import { useListings } from "@/lib/listings-store";
 import { getCategoryBySlug } from "@/lib/categories";
 import { MarketplaceHeader } from "./MarketplaceHeader";
 import { ListingCard, formatPrice } from "./ListingCard";
+import { EmbeddedCheckoutModal } from "./EmbeddedCheckoutModal";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -58,7 +59,7 @@ export function ItemDetailClient({ id }: { id: string }) {
   const [sentSuccess, setSentSuccess] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [isImageOpen, setIsImageOpen] = useState(false);
-  const [isBuying, setIsBuying] = useState(false);
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [buyError, setBuyError] = useState<string | null>(null);
   const [checkoutCanceled, setCheckoutCanceled] = useState(false);
 
@@ -276,34 +277,11 @@ export function ItemDetailClient({ id }: { id: string }) {
     }
   };
 
-  const handleBuyNow = async () => {
+  const handleBuyNow = () => {
     if (!listing) return;
     setBuyError(null);
     setCheckoutCanceled(false);
-    setIsBuying(true);
-    try {
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listingId: listing.id }),
-      });
-
-      const data = (await res.json()) as {
-        url?: string;
-        error?: string;
-      };
-
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || "Unable to start Stripe Checkout.");
-      }
-
-      window.location.href = data.url;
-    } catch (err) {
-      setBuyError(
-        err instanceof Error ? err.message : "Unable to start Stripe Checkout."
-      );
-      setIsBuying(false);
-    }
+    setShowCheckoutModal(true);
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -460,41 +438,23 @@ export function ItemDetailClient({ id }: { id: string }) {
                       <ShoppingBag className="size-4" />
                       <span>Sold · This item is no longer available</span>
                     </div>
-                  ) : listing.sellerOnboarded && listing.price > 0 ? (
+                  ) : listing.price > 0 ? (
                     <div>
                       <button
                         type="button"
                         onClick={handleBuyNow}
-                        disabled={isBuying}
-                        className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#635BFF] px-4 text-[15px] font-semibold text-white shadow-xs transition-colors hover:bg-[#5249F5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#635BFF] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#635BFF] px-4 text-[15px] font-semibold text-white shadow-xs transition-colors hover:bg-[#5249F5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#635BFF] focus-visible:ring-offset-2"
                       >
-                        {isBuying ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" />
-                            <span>Redirecting to Stripe Checkout...</span>
-                          </>
-                        ) : (
-                          <>
-                            <CreditCard className="size-5" />
-                            <span>Buy Now · {formatPrice(listing.price)}</span>
-                          </>
-                        )}
+                        <CreditCard className="size-5" />
+                        <span>Buy Now · {formatPrice(listing.price)}</span>
                       </button>
                       <p className="mt-1.5 text-center text-xs text-[#65676B]">
-                        Instant checkout via Stripe Connect (10% platform fee
-                        included)
+                        Instant embedded checkout powered by Stripe
                       </p>
                     </div>
                   ) : (
                     <div className="rounded-lg border border-[#E4E6EB] bg-[#F7F8FA] px-3.5 py-2.5 text-xs text-[#65676B]">
-                      Online checkout is unavailable because this seller
-                      hasn&apos;t connected Stripe yet.{" "}
-                      <Link
-                        href="/seller/connect"
-                        className="font-semibold text-[#635BFF] hover:underline"
-                      >
-                        Are you the seller? Connect with Stripe
-                      </Link>
+                      This item is listed as Free. Message the seller to arrange pickup.
                     </div>
                   )}
                 </div>
@@ -763,6 +723,20 @@ export function ItemDetailClient({ id }: { id: string }) {
           </section>
         )}
       </main>
+
+      {showCheckoutModal && (
+        <EmbeddedCheckoutModal
+          listingId={listing.id}
+          listingTitle={listing.title}
+          onClose={() => setShowCheckoutModal(false)}
+          onSuccess={() => {
+            upsertListing({
+              ...listing,
+              status: "sold",
+            });
+          }}
+        />
+      )}
 
       {/* Accessible Image Lightbox */}
       {isImageOpen && (
